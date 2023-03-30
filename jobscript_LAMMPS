@@ -1,0 +1,26 @@
+#!/bin/bash
+#SBATCH -A IscrC_H-CNT
+#SBATCH -p m100_usr_prod      # queue name
+#SBATCH --qos=m100_qos_dbg
+#SBATCH --time 01:59:59          # format: HH:MM:SS
+#SBATCH --nodes=1                    # nodes
+#SBATCH --ntasks-per-node=1   # tasks out of 128
+#SBATCH --ntasks-per-socket=1
+#SBATCH --cpus-per-task=8
+#SBATCH --gpus-per-node=1     # 1 gpus per node out of 4
+#SBATCH --mem=50000MB           # memory per node out of 246000 MB
+#SBATCH --job-name=dpGen-MD
+#SBATCH -e JOB.e
+#SBATCH -o JOB.o
+
+module purge
+module load profile/chem-phys
+module load gnu/8.4.0 blas/3.8.0--gnu--8.4.0 lapack/3.9.0--gnu--8.4.0 cuda/11.0 spectrum_mpi/10.4.0--binary fftw/3.3.8--spectrum_mpi--10.4.0--binary lammps/29sep2021
+module list
+
+#export OMP_NUM_THREADS=$(echo "$SLURM_CPUS_PER_TASK/$SLURM_NTASKS_PER_NODE"|bc)
+export OMP_NUM_THREADS=$(echo "$SLURM_CPUS_PER_TASK")
+echo "OMP_NUM_THREADS=$OMP_NUM_THREADS"
+
+mpiexec -gpu -np ${SLURM_NTASKS_PER_NODE} lmp_gpu_deepmd -sf gpu -pk gpu 1 neigh yes omp 8 -in $1.in > $2.out
+###mpirun -np 16 lmp_gpu_deepmd -sf gpu -pk gpu 4 -in ./3AP-Fe110/500K/3AP-Fe110_dyn.in > ./3AP-Fe110/500K/3AP-Fe110_dyn.out 
