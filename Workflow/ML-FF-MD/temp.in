@@ -1,0 +1,88 @@
+############################Initialize the system###################
+units		metal
+
+#Apply boundary conditions
+boundary        p p p
+
+#Atom style and input positions file
+atom_style      atomic
+read_data /m100_work/IscrC_GF-Diam/alberto/Manual_dpgen_v2/Data/ML-FF-MD/3Fe110+3LG+3Fe110_pt-0GPa-800K/Step1/INPUT/3Fe110+3LG+3Fe110_pt-0GPa-800K_pos.data
+
+#Potentials definitions
+pair_style  deepmd   /m100_work/IscrC_GF-Diam/alberto/Manual_dpgen_v2/Data/Training/OUTPUT/Step2/compressed.pb
+pair_coeff	* *
+newton on
+
+#Options on neighbor list
+neighbor	2 bin
+neigh_modify	every 1 delay 0 check yes
+
+#Groups definitions
+group           sub_bot id <> 1 90
+group           layer_bot id <> 1 30
+group           thermo_bot id <> 31 90
+group           intercalate id <> 181 270
+group           sub_top id <> 91 180
+group           layer_top id <> 151 180
+group           thermo_top id <> 91 150
+group           init_vel union thermo_bot intercalate thermo_top
+
+#Fix forces acting on atoms without external forces
+fix Rforces all store/force
+
+# fixed bottom atom layer and free top atom layer
+fix  press_on_layer_top  layer_top  addforce  0.0 0.0 0.0
+fix             fixes_on_layer_bot layer_bot setforce 0.0 0.0 0.0  ## Freeze atoms    
+fix_modify      press_on_layer_top energy yes
+
+########################Relaxation section#######################
+#Write trajectory file
+dump dump_relax all xyz 1 /m100_work/IscrC_GF-Diam/alberto/Manual_dpgen_v2/Data/ML-FF-MD/3Fe110+3LG+3Fe110_pt-0GPa-800K/Step2/OUTPUT/3Fe110+3LG+3Fe110_pt-0GPa-800K_relax.xyz
+dump_modify     dump_relax element Fe C O H 
+
+minimize 0.0 1.0e-6 100000 1000000
+
+undump dump_relax
+########################Thermalization section###################
+# NVT with NH thermostat lower slab
+fix  termostat_top  thermo_top  nvt  temp  800.0 800.0 $(100.*dt)
+fix  termostat_bot  thermo_bot  nvt  temp  800.0 800.0 $(100.*dt)
+fix             nve_int intercalate nve 
+fix_modify      press_on_layer_top energy no
+
+compute         temp_sub_top sub_top temp/com
+compute         temp_sub_bot sub_bot temp/com
+compute         temp_int intercalate temp/com
+
+#Write trajectory file
+dump dump_thermo all xyz 100 /m100_work/IscrC_GF-Diam/alberto/Manual_dpgen_v2/Data/ML-FF-MD/3Fe110+3LG+3Fe110_pt-0GPa-800K/Step2/OUTPUT/3Fe110+3LG+3Fe110_pt-0GPa-800K_therm.xyz
+dump_modify     dump_thermo element Fe C O H 
+
+thermo          100
+thermo_style   custom step time pe c_temp_sub_top c_temp_sub_bot c_temp_int 
+#Run the sliding system
+timestep	0.0001
+velocity init_vel create 800 31371 dist gaussian/
+velocity        layer_bot set 0.0 0.0 0.0
+velocity        layer_top set NULL NULL NULL
+run             50000 start 0
+
+undump dump_thermo
+#########################Sliding dynamic section######################
+fix 		slider layer_top move linear 2.0 NULL NULL
+
+#Write trajectory file
+dump dump_dyn_pos all xyz 100 /m100_work/IscrC_GF-Diam/alberto/Manual_dpgen_v2/Data/ML-FF-MD/3Fe110+3LG+3Fe110_pt-0GPa-800K/Step2/OUTPUT/3Fe110+3LG+3Fe110_pt-0GPa-800K_dynpos.xyz
+dump_modify     dump_dyn_pos element Fe C O H
+dump_modify     dump_dyn_pos sort id
+
+dump dump_dyn_Rforces all custom 100 /m100_work/IscrC_GF-Diam/alberto/Manual_dpgen_v2/Data/ML-FF-MD/3Fe110+3LG+3Fe110_pt-0GPa-800K/Step2/OUTPUT/3Fe110+3LG+3Fe110_pt-0GPa-800K_dynforces.xyz element f_Rforces[*]
+dump_modify     dump_dyn_Rforces element Fe C O H
+dump_modify     dump_dyn_Rforces sort id
+
+thermo          100
+thermo_style   custom step time pe c_temp_sub_top c_temp_sub_bot c_temp_int
+
+#Run the sliding system
+run 20000 start 0
+write_restart /m100_work/IscrC_GF-Diam/alberto/Manual_dpgen_v2/Data/ML-FF-MD/3Fe110+3LG+3Fe110_pt-0GPa-800K/Step2/OUTPUT/3Fe110+3LG+3Fe110_pt-0GPa-800K.restart
